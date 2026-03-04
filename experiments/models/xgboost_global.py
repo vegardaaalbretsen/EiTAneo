@@ -6,17 +6,20 @@ from pathlib import Path
 
 import pandas as pd
 
-from experiments.base import BaseExperiment, ExperimentResult
+from experiments.base import BaseExperiment, ExperimentResult, RunModes
 from experiments.config import (
     DEFAULT_TRAIN_RATIO,
     DEFAULT_VAL_RATIO,
     GLOBAL_FEATURES,
     TARGET_COLUMN,
-    DEFAULT_NUM_BOOST_ROUND,
-    DEFAULT_EARLY_STOPPING_ROUNDS,
+    DEFAULT_TRAIN_SIZE_ROLLING_WINDOW,
+    DEFAULT_VAL_SIZE_ROLLING_WINDOW,
+    DEFAULT_TEST_SIZE_ROLLING_WINDOW,
+    DEFAULT_STEP_SIZE_ROLLING_WINDOW,
 )
 from experiments.metrics import with_sample_count
-from helpers.data_retrieval import chronological_split, split_features_target
+from helpers.data_retrieval import chronological_split, rolling_window, split_features_target
+from experiments.models._xgboost_utils import evaluate_xgboost, train_xgboost_regressor
 
 
 class XGBoostGlobalExperiment(BaseExperiment):
@@ -24,23 +27,32 @@ class XGBoostGlobalExperiment(BaseExperiment):
 
     name = "xgboost_global"
 
-    def run(self, df: pd.DataFrame, output_dir: Path) -> ExperimentResult:
+    def run(self, df: pd.DataFrame, mode: RunModes, output_dir: Path) -> ExperimentResult:
+        if mode == RunModes.CHRONOLOGICAL:
+            return self._run_chronological(df, output_dir)
+        if mode == RunModes.SLIDING_WINDOW:
+            return self._run_rolling_window(df, output_dir, mode="sliding_window")
+        if mode == RunModes.EXPANDING_WINDOW:
+            return self._run_rolling_window(df, output_dir, mode="expanding_window")
+        raise ValueError(f"Unsupported mode '{mode}' for Experiment. Use 'chronological', 'sliding_window', or 'expanding_window'.")
+    
+    def _run_chronological(self, df: pd.DataFrame, output_dir: Path) -> ExperimentResult:
         train_df, val_df, test_df = chronological_split(
             df,
             train_ratio=DEFAULT_TRAIN_RATIO,
             val_ratio=DEFAULT_VAL_RATIO,
         )
 
-        model = self._train_xgboost_regressor(
+        model = train_xgboost_regressor(
             train_df=train_df,
             val_df=val_df,
             feature_cols=GLOBAL_FEATURES,
             target_col=TARGET_COLUMN,
         )
 
-        train_metrics = self._evaluate_xgboost(model, train_df, GLOBAL_FEATURES, TARGET_COLUMN)
-        val_metrics = self._evaluate_xgboost(model, val_df, GLOBAL_FEATURES, TARGET_COLUMN)
-        test_metrics = self._evaluate_xgboost(model, test_df, GLOBAL_FEATURES, TARGET_COLUMN)
+        train_metrics = evaluate_xgboost(model, train_df, GLOBAL_FEATURES, TARGET_COLUMN)
+        val_metrics = evaluate_xgboost(model, val_df, GLOBAL_FEATURES, TARGET_COLUMN)
+        test_metrics = evaluate_xgboost(model, test_df, GLOBAL_FEATURES, TARGET_COLUMN)
         test_with_n = with_sample_count(test_metrics, len(test_df))
 
         experiment_dir = output_dir / self.name
@@ -61,76 +73,69 @@ class XGBoostGlobalExperiment(BaseExperiment):
                 "val_metrics": val_metrics,
             },
         )
+    
+    def _run_rolling_window(self, df: pd.DataFrame, output_dir: Path, mode: str) -> ExperimentResult:
 
-    def _train_xgboost_regressor(
-        self,
-        train_df: pd.DataFrame,
-        val_df: pd.DataFrame,
-        feature_cols,
-        target_col: str = TARGET_COLUMN,
-        params: dict | None = None,
-        num_boost_round: int = DEFAULT_NUM_BOOST_ROUND,
-        early_stopping_rounds: int = DEFAULT_EARLY_STOPPING_ROUNDS,
-        verbose_eval: int = 0,
-    ):
-        try:
-            import xgboost as xgb
-        except ImportError as exc:
-            raise RuntimeError(
-                "XGBoost is required for this experiment. Install with `pip install xgboost`."
-            ) from exc
+        experiment_dir = output_dir / self.name / mode
+        experiment_dir.mkdir(parents=True, exist_ok=True)
 
-        # sensible defaults for XGBoost; user params override
-        resolved = {
-            "objective": "reg:squarederror",
-            "eval_metric": "mae",
-            "eta": 0.05,
-            "max_depth": 6,
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
-            "seed": 42,
-        }
-        if params:
-            resolved.update(params)
+        window_results = []
 
-        X_train, y_train = split_features_target(train_df, feature_cols, target_col)
-        X_val, y_val = split_features_target(val_df, feature_cols, target_col)
+        for i, (train_df, val_df, test_df) in enumerate(
+            rolling_window(
+                df,
+                train_size=DEFAULT_TRAIN_SIZE_ROLLING_WINDOW,
+                val_size=DEFAULT_VAL_SIZE_ROLLING_WINDOW,
+                test_size=DEFAULT_TEST_SIZE_ROLLING_WINDOW,
+                step_size=DEFAULT_STEP_SIZE_ROLLING_WINDOW,
+                expanding=(mode == "expanding_window"),
+            )
+        ):
+            model = train_xgboost_regressor(
+                train_df=train_df,
+                val_df=val_df,
+                feature_cols=GLOBAL_FEATURES,
+                target_col=TARGET_COLUMN,
+            )
 
-        dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=list(feature_cols))
-        dval = xgb.DMatrix(X_val, label=y_val, feature_names=list(feature_cols))
+            test_metrics = evaluate_xgboost(model, test_df, GLOBAL_FEATURES, TARGET_COLUMN)
 
-        evals = [(dtrain, "train"), (dval, "valid")]
+            window_results.append({
+                "window": i,
+                "train_start": train_df.index.min(),
+                "train_end": train_df.index.max(),
+                "test_start": test_df.index.min(),
+                "test_end": test_df.index.max(),
+                "n_samples": len(test_df),
+                **test_metrics
+            })
 
-        model = xgb.train(
-            resolved,
-            dtrain,
-            num_boost_round=num_boost_round,
-            evals=evals,
-            early_stopping_rounds=early_stopping_rounds,
-            verbose_eval=verbose_eval,
+        if not window_results:
+            raise ValueError("No rolling windows were generated.")
+
+        results_df = pd.DataFrame(window_results)
+
+        # Weighted aggregation across windows
+        metric_cols = [
+            c for c in results_df.columns
+            if c not in ["window", "train_start", "train_end", "test_start", "test_end", "n_samples"]
+        ]
+        total_samples = results_df["n_samples"].sum()
+        weighted_metrics = {}
+        for col in metric_cols:
+            weighted_metrics[col] = (results_df[col] * results_df["n_samples"]).sum() / total_samples
+        weighted_metrics["n_samples"] = int(total_samples)
+
+        # Save window metrics for inspection
+        results_df.to_csv(experiment_dir / "window_metrics.csv", index=False)
+
+        return ExperimentResult(
+            experiment_name=self.name,
+            overall_test_metrics=weighted_metrics,
+            segment_test_metrics={"rolling": weighted_metrics},
+            metadata={
+                "num_windows": len(results_df),
+                "mode": mode,
+            },
         )
 
-        return model
-
-    def _evaluate_xgboost(self, model, split_df: pd.DataFrame, feature_cols, target_col: str = TARGET_COLUMN) -> dict[str, float]:
-        try:
-            import xgboost as xgb  # noqa: F401 - keep for type expectations
-        except Exception:
-            pass
-
-        X_split, y_split = split_features_target(split_df, feature_cols, target_col)
-        dsplit = xgb.DMatrix(X_split, feature_names=list(feature_cols))
-        best_it = getattr(model, "best_iteration", None)
-        if best_it is not None and best_it >= 0:
-            # prediction with best_iteration (iteration_range end is exclusive, so add 1)
-            try:
-                preds = model.predict(dsplit, iteration_range=(0, best_it + 1))
-            except TypeError:
-                # fallback to older ntree_limit parameter
-                preds = model.predict(dsplit, ntree_limit=best_it)
-        else:
-            preds = model.predict(dsplit)
-
-        from experiments.metrics import regression_metrics
-
-        return regression_metrics(y_split, preds)
