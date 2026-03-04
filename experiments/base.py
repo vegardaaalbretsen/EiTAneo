@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+from enum import Enum
 
 import pandas as pd
 
@@ -29,5 +30,11 @@ class BaseExperiment(ABC):
     name: str
 
     @abstractmethod
-    def run(self, df: pd.DataFrame, output_dir: Path) -> ExperimentResult:
+    def run(self, df: pd.DataFrame, mode: RunModes, output_dir: Path) -> ExperimentResult:
         """Train/evaluate a model strategy and return comparison-ready metrics."""
+
+
+class RunModes(Enum):
+    CHRONOLOGICAL = "chronological"
+    SLIDING_WINDOW = "sliding_window"
+    EXPANDING_WINDOW = "expanding_window"
