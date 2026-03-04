@@ -150,7 +150,7 @@ def rolling_window(
         yield (
             df.iloc[train_start:train_end].copy(),
             df.iloc[train_end:val_end].copy(),
-            df.iloc[val_end:test_end].copy(),
+            df.iloc[5 + val_end:test_end].copy(), # 5 is added since we only know data from 5 days ago and onward when predicting consumption
         )
 
         start += step_size
