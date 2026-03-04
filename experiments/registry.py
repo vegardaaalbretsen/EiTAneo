@@ -9,12 +9,16 @@ from experiments.models.lightgbm_global import LightGBMGlobalExperiment
 from experiments.models.lightgbm_location_specific import LightGBMLocationSpecificExperiment
 from experiments.models.lightgbm_two_group import LightGBMTwoGroupExperiment
 from experiments.models.linear_regression_global import LinearRegressionGlobalExperiment
+from experiments.models.xgboost_global import XGBoostGlobalExperiment
+from experiments.models.svr_global import SVRGlobalExperiment
 
 EXPERIMENT_REGISTRY: dict[str, type[BaseExperiment]] = {
     LightGBMGlobalExperiment.name: LightGBMGlobalExperiment,
     LightGBMTwoGroupExperiment.name: LightGBMTwoGroupExperiment,
     LightGBMLocationSpecificExperiment.name: LightGBMLocationSpecificExperiment,
     LinearRegressionGlobalExperiment.name: LinearRegressionGlobalExperiment,
+    XGBoostGlobalExperiment.name: XGBoostGlobalExperiment,
+    SVRGlobalExperiment.name: SVRGlobalExperiment,
 }
 
 
