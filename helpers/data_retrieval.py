@@ -112,3 +112,45 @@ def chronological_split(
         )
 
     return train_df, val_df, test_df
+
+
+def rolling_window(
+        df: pd.DataFrame,
+        train_size: int,
+        val_size: int,
+        test_size: int = 1,
+        step_size: int = 1,
+        expanding: bool = False,
+):
+    if val_size <= 0:
+        raise ValueError("val_size must be > 0")
+    if train_size <= 0:
+        raise ValueError("train_size must be > 0")
+    if test_size < 0:
+        raise ValueError("test_size must be >= 0")
+    if step_size <= 0:
+        raise ValueError("step_size must be > 0")
+    
+    n_rows = len(df)
+    start = 0
+
+    while True:
+        if expanding:
+            train_start = 0
+        else: # sliding
+            train_start = start
+
+        train_end = start + train_size
+        val_end = train_end + val_size
+        test_end = val_end + test_size
+        
+        if test_end > n_rows:
+            break
+
+        yield (
+            df.iloc[train_start:train_end].copy(),
+            df.iloc[train_end:val_end].copy(),
+            df.iloc[5 + val_end:test_end].copy(), # 5 is added since we only know data from 5 days ago and onward when predicting consumption
+        )
+
+        start += step_size
