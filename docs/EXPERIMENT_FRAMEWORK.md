@@ -29,6 +29,8 @@ This project uses a small experiment framework so multiple model strategies can 
 - `lightgbm_global`
 - `lightgbm_two_group`
 - `lightgbm_location_specific`
+- `xgboost_global`
+- `svr_global`
 
 List from CLI:
 

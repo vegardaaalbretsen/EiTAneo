@@ -24,6 +24,27 @@ python run_experiments.py
 python run_experiments.py --experiments linear_regression_global lightgbm_global
 ```
 
+### Run with a specific mode
+
+Run modes control how the dataset is split and how experiments are executed over time. Available modes are:
+
+- `chronological` — single chronological train/test split (default)
+- `sliding_window` — repeated training on sliding windows
+- `expanding_window` — training on an expanding window over time
+
+Example — run experiments using the sliding window evaluation:
+
+```bash
+python run_experiments.py --mode sliding_window
+```
+
+You can combine `--mode` with `--experiments` to run a subset of experiments with the chosen evaluation strategy:
+
+```bash
+python run_experiments.py --mode sliding_window --experiments lightgbm_global
+```
+
+
 ### Outputs
 
 By default, results are written to `results/experiments/`:

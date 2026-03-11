@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 
+from experiments.base import RunModes
 from experiments.config import DEFAULT_OUTPUT_DIR
 from experiments.registry import available_experiments
 from experiments.runner import run_experiments
@@ -28,6 +29,16 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         default=["all"],
         help="Experiment names to run, or use 'all'.",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=[m.value for m in RunModes],
+        default=RunModes.CHRONOLOGICAL.value,
+        help=(
+            "Run mode to use. Choices: "
+            + ", ".join([m.value for m in RunModes])
+            + ". Default: chronological."
+        ),
     )
     parser.add_argument(
         "--list",
@@ -57,6 +68,7 @@ def main() -> None:
     try:
         results, summary_df, comparison_csv, comparison_json = run_experiments(
             experiment_names=selected,
+            mode=RunModes(args.mode),
             data_path=args.data_path,
             output_dir=args.output_dir,
         )

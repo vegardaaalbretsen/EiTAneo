@@ -50,3 +50,13 @@ DEFAULT_LGB_PARAMS = {
 
 DEFAULT_NUM_BOOST_ROUND = 1000
 DEFAULT_EARLY_STOPPING_ROUNDS = 50
+
+
+# best performance will likely be when the step size and test size are 1
+# but this is also computationally expensive
+# TODO: find a good balance between performance and runtime by using a larger step size and test size
+DEFAULT_TRAIN_SIZE_ROLLING_WINDOW = 5 * 24 * 20  # 5 cities, 24 hours, 20 days
+DEFAULT_VAL_SIZE_ROLLING_WINDOW = 5 * 24 * 3     # 5 cities, 24 hours, 3 days
+DEFAULT_TEST_SIZE_ROLLING_WINDOW = 5 * 24 * 1    # 5 cities, 24 hours, 1 day
+DEFAULT_STEP_SIZE_ROLLING_WINDOW = 5 * 24 * 1    # 5 cities, 24 hours, 1 day step
+

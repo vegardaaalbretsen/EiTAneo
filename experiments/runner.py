@@ -8,7 +8,7 @@ from typing import Iterable
 
 import pandas as pd
 
-from experiments.base import ExperimentResult
+from experiments.base import ExperimentResult, RunModes
 from experiments.registry import build_experiments
 from helpers.data_retrieval import load_preprocessed_data
 
@@ -22,6 +22,7 @@ def _summary_row(result: ExperimentResult) -> dict[str, float | str]:
 def run_experiments(
     experiment_names: Iterable[str],
     data_path: str | Path,
+    mode: RunModes,
     output_dir: str | Path,
 ) -> tuple[list[ExperimentResult], pd.DataFrame, Path, Path]:
     """Run selected experiments and persist comparison outputs."""
@@ -32,7 +33,7 @@ def run_experiments(
 
     results: list[ExperimentResult] = []
     for experiment in build_experiments(experiment_names):
-        result = experiment.run(df=df, output_dir=output_path)
+        result = experiment.run(df=df, mode=mode, output_dir=output_path)
         results.append(result)
 
         experiment_dir = output_path / result.experiment_name

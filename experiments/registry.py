@@ -11,13 +11,17 @@ from experiments.models.lightgbm_two_group import LightGBMTwoGroupExperiment
 from experiments.models.linear_regression_global import LinearRegressionGlobalExperiment
 from experiments.models.random_forest import RandomForestExperiment
 
+from experiments.models.xgboost_global import XGBoostGlobalExperiment
+from experiments.models.svr_global import SVRGlobalExperiment
 
 EXPERIMENT_REGISTRY: dict[str, type[BaseExperiment]] = {
     LightGBMGlobalExperiment.name: LightGBMGlobalExperiment,
     LightGBMTwoGroupExperiment.name: LightGBMTwoGroupExperiment,
     LightGBMLocationSpecificExperiment.name: LightGBMLocationSpecificExperiment,
     LinearRegressionGlobalExperiment.name: LinearRegressionGlobalExperiment,
-    RandomForestExperiment.name: RandomForestExperiment
+    RandomForestExperiment.name: RandomForestExperiment,
+    XGBoostGlobalExperiment.name: XGBoostGlobalExperiment,
+    SVRGlobalExperiment.name: SVRGlobalExperiment,
 }
 
 

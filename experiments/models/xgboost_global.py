@@ -1,23 +1,31 @@
-"""Global linear regression baseline."""
+"""Single XGBoost model trained on all locations."""
 
 from __future__ import annotations
 
-import pickle
 from pathlib import Path
 
 import pandas as pd
-from sklearn.linear_model import LinearRegression
 
 from experiments.base import BaseExperiment, ExperimentResult, RunModes
-from experiments.config import DEFAULT_STEP_SIZE_ROLLING_WINDOW, DEFAULT_TEST_SIZE_ROLLING_WINDOW, DEFAULT_TRAIN_RATIO, DEFAULT_TRAIN_SIZE_ROLLING_WINDOW, DEFAULT_VAL_RATIO, DEFAULT_VAL_SIZE_ROLLING_WINDOW, GLOBAL_FEATURES, TARGET_COLUMN
-from experiments.metrics import regression_metrics, with_sample_count
+from experiments.config import (
+    DEFAULT_TRAIN_RATIO,
+    DEFAULT_VAL_RATIO,
+    GLOBAL_FEATURES,
+    TARGET_COLUMN,
+    DEFAULT_TRAIN_SIZE_ROLLING_WINDOW,
+    DEFAULT_VAL_SIZE_ROLLING_WINDOW,
+    DEFAULT_TEST_SIZE_ROLLING_WINDOW,
+    DEFAULT_STEP_SIZE_ROLLING_WINDOW,
+)
+from experiments.metrics import with_sample_count
 from helpers.data_retrieval import chronological_split, rolling_window, split_features_target
+from experiments.models._xgboost_utils import evaluate_xgboost, train_xgboost_regressor
 
 
-class LinearRegressionGlobalExperiment(BaseExperiment):
-    """Single global linear regression using all locations."""
+class XGBoostGlobalExperiment(BaseExperiment):
+    """Global XGBoost model with location_id as a feature."""
 
-    name = "linear_regression_global"
+    name = "xgboost_global"
 
     def run(self, df: pd.DataFrame, mode: RunModes, output_dir: Path) -> ExperimentResult:
         if mode == RunModes.CHRONOLOGICAL:
@@ -27,7 +35,7 @@ class LinearRegressionGlobalExperiment(BaseExperiment):
         if mode == RunModes.EXPANDING_WINDOW:
             return self._run_rolling_window(df, output_dir, mode="expanding_window")
         raise ValueError(f"Unsupported mode '{mode}' for Experiment. Use 'chronological', 'sliding_window', or 'expanding_window'.")
-
+    
     def _run_chronological(self, df: pd.DataFrame, output_dir: Path) -> ExperimentResult:
         train_df, val_df, test_df = chronological_split(
             df,
@@ -35,23 +43,23 @@ class LinearRegressionGlobalExperiment(BaseExperiment):
             val_ratio=DEFAULT_VAL_RATIO,
         )
 
-        X_train, y_train = split_features_target(train_df, GLOBAL_FEATURES, TARGET_COLUMN)
-        X_val, y_val = split_features_target(val_df, GLOBAL_FEATURES, TARGET_COLUMN)
-        X_test, y_test = split_features_target(test_df, GLOBAL_FEATURES, TARGET_COLUMN)
+        model = train_xgboost_regressor(
+            train_df=train_df,
+            val_df=val_df,
+            feature_cols=GLOBAL_FEATURES,
+            target_col=TARGET_COLUMN,
+        )
 
-        model = LinearRegression()
-        model.fit(X_train, y_train)
-
-        train_metrics = regression_metrics(y_train, model.predict(X_train))
-        val_metrics = regression_metrics(y_val, model.predict(X_val))
-        test_metrics = regression_metrics(y_test, model.predict(X_test))
+        train_metrics = evaluate_xgboost(model, train_df, GLOBAL_FEATURES, TARGET_COLUMN)
+        val_metrics = evaluate_xgboost(model, val_df, GLOBAL_FEATURES, TARGET_COLUMN)
+        test_metrics = evaluate_xgboost(model, test_df, GLOBAL_FEATURES, TARGET_COLUMN)
         test_with_n = with_sample_count(test_metrics, len(test_df))
 
         experiment_dir = output_dir / self.name
         experiment_dir.mkdir(parents=True, exist_ok=True)
-        model_path = experiment_dir / "model.pkl"
-        with open(model_path, "wb") as file_obj:
-            pickle.dump(model, file_obj)
+        model_path = experiment_dir / "model.xgb"
+        # xgboost Booster has save_model
+        model.save_model(str(model_path))
 
         return ExperimentResult(
             experiment_name=self.name,
@@ -60,12 +68,14 @@ class LinearRegressionGlobalExperiment(BaseExperiment):
             metadata={
                 "feature_columns": list(GLOBAL_FEATURES),
                 "model_path": str(model_path),
+                "best_iteration": int(getattr(model, "best_iteration", -1)),
                 "train_metrics": train_metrics,
                 "val_metrics": val_metrics,
             },
         )
     
     def _run_rolling_window(self, df: pd.DataFrame, output_dir: Path, mode: str) -> ExperimentResult:
+
         experiment_dir = output_dir / self.name / mode
         experiment_dir.mkdir(parents=True, exist_ok=True)
 
@@ -81,16 +91,15 @@ class LinearRegressionGlobalExperiment(BaseExperiment):
                 expanding=(mode == "expanding_window"),
             )
         ):
-            X_train, y_train = split_features_target(train_df, GLOBAL_FEATURES, TARGET_COLUMN)
-            X_val, y_val = split_features_target(val_df, GLOBAL_FEATURES, TARGET_COLUMN)
-            X_test, y_test = split_features_target(test_df, GLOBAL_FEATURES, TARGET_COLUMN)
+            model = train_xgboost_regressor(
+                train_df=train_df,
+                val_df=val_df,
+                feature_cols=GLOBAL_FEATURES,
+                target_col=TARGET_COLUMN,
+            )
 
-            model = LinearRegression()
-            model.fit(X_train, y_train)
+            test_metrics = evaluate_xgboost(model, test_df, GLOBAL_FEATURES, TARGET_COLUMN)
 
-            test_metrics = regression_metrics(y_test, model.predict(X_test))
-
-            # include n_samples per window for weighted aggregation
             window_results.append({
                 "window": i,
                 "train_start": train_df.index.min(),
@@ -129,3 +138,4 @@ class LinearRegressionGlobalExperiment(BaseExperiment):
                 "mode": mode,
             },
         )
+
