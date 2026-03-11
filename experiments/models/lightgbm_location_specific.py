@@ -170,8 +170,6 @@ class LightGBMLocationSpecificExperiment(BaseExperiment):
                 index=False,
             )
 
-            # TODO: add plots
-
             metric_cols = [
                 c for c in results_df.columns
                 if c not in ["window", "train_start", "train_end", "test_start", "test_end", "n_samples"]
