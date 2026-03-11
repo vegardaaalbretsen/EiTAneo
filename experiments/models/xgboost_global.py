@@ -55,7 +55,7 @@ class XGBoostGlobalExperiment(BaseExperiment):
         test_metrics = evaluate_xgboost(model, test_df, GLOBAL_FEATURES, TARGET_COLUMN)
         test_with_n = with_sample_count(test_metrics, len(test_df))
 
-        experiment_dir = output_dir / self.name
+        experiment_dir = output_dir / self.name / "chronological"
         experiment_dir.mkdir(parents=True, exist_ok=True)
         model_path = experiment_dir / "model.xgb"
         # xgboost Booster has save_model

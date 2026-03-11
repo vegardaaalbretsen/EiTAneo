@@ -46,7 +46,7 @@ class SVRGlobalExperiment(BaseExperiment):
         test_metrics = evaluate(model, test_df, GLOBAL_FEATURES, TARGET_COLUMN)
         test_with_n = with_sample_count(test_metrics, len(test_df))
 
-        experiment_dir = output_dir / self.name
+        experiment_dir = output_dir / self.name / "chronological"
         experiment_dir.mkdir(parents=True, exist_ok=True)
         model_path = experiment_dir / "model.joblib"
 

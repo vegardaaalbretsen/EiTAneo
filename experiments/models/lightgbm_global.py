@@ -114,8 +114,6 @@ class LightGBMGlobalExperiment(BaseExperiment):
         # Average metrics across windows
         avg_metrics = results_df.drop(columns=["window", "train_start", "train_end", "test_start", "test_end"]).mean().to_dict()
 
-        Plotter.create_rolling_plots(df, results_df, mode=RunModes(mode), experiment_dir=experiment_dir)
-
         return ExperimentResult(
             experiment_name=self.name,
             overall_test_metrics=avg_metrics,

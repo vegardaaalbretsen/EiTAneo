@@ -47,7 +47,7 @@ class LinearRegressionGlobalExperiment(BaseExperiment):
         test_metrics = regression_metrics(y_test, model.predict(X_test))
         test_with_n = with_sample_count(test_metrics, len(test_df))
 
-        experiment_dir = output_dir / self.name
+        experiment_dir = output_dir / self.name / "chronological"
         experiment_dir.mkdir(parents=True, exist_ok=True)
         model_path = experiment_dir / "model.pkl"
         with open(model_path, "wb") as file_obj:

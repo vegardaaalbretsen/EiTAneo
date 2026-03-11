@@ -49,7 +49,7 @@ class LightGBMTwoGroupExperiment(BaseExperiment):
             },
         }
 
-        experiment_dir = output_dir / self.name
+        experiment_dir = output_dir / self.name / "chronological"
         experiment_dir.mkdir(parents=True, exist_ok=True)
 
         segment_test_metrics: dict[str, dict[str, float]] = {}
