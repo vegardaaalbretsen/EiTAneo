@@ -29,6 +29,9 @@ class BaseExperiment(ABC):
 
     name: str
 
+    def __init__(self, options: dict[str, Any] | None = None) -> None:
+        self.options = dict(options or {})
+
     @abstractmethod
     def run(self, df: pd.DataFrame, mode: RunModes, output_dir: Path) -> ExperimentResult:
         """Train/evaluate a model strategy and return comparison-ready metrics."""

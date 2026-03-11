@@ -45,6 +45,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="List available experiments and exit.",
     )
+    parser.add_argument(
+        "--random-forest-grid-search",
+        action="store_true",
+        help="Enable random_forest grid search (including chronological mode).",
+    )
+    parser.add_argument(
+        "--lightgbm-grid-search",
+        action="store_true",
+        help="Enable lightgbm_global grid search (chronological/sliding/expanding modes).",
+    )
     return parser.parse_args()
 
 
@@ -66,11 +76,22 @@ def main() -> None:
 
     selected = resolve_experiment_names(args.experiments)
     try:
-        results, summary_df, comparison_csv, comparison_json = run_experiments(
+        (
+            results,
+            summary_df,
+            comparison_csv,
+            comparison_json,
+            grid_trials_df,
+            grid_trials_csv,
+        ) = run_experiments(
             experiment_names=selected,
             mode=RunModes(args.mode),
             data_path=args.data_path,
             output_dir=args.output_dir,
+            experiment_options={
+                "random_forest_grid_search": args.random_forest_grid_search,
+                "lightgbm_grid_search": args.lightgbm_grid_search,
+            },
         )
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
         raise SystemExit(f"Error: {exc}") from exc
@@ -78,10 +99,16 @@ def main() -> None:
     print(f"Ran {len(results)} experiment(s).")
     print(f"Comparison CSV:  {comparison_csv}")
     print(f"Comparison JSON: {comparison_json}")
+    if grid_trials_csv is not None:
+        print(f"Grid Trials CSV: {grid_trials_csv}")
 
     if not summary_df.empty:
         print("\nResults (sorted by MAE):")
         print(summary_df.to_string(index=False))
+
+    if not grid_trials_df.empty:
+        print("\nGrid search trials (sorted by experiment + validation MAE):")
+        print(grid_trials_df.to_string(index=False))
 
 
 if __name__ == "__main__":

@@ -1,11 +1,16 @@
-from pathlib import Path
-import pickle
+from __future__ import annotations
+
 import itertools
+import pickle
+from pathlib import Path
+from typing import Any
+
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 
 from experiments.base import BaseExperiment, ExperimentResult, RunModes
 from experiments.config import (
+    DEFAULT_RANDOM_FOREST_PARAMS,
     DEFAULT_STEP_SIZE_ROLLING_WINDOW,
     DEFAULT_TEST_SIZE_ROLLING_WINDOW,
     DEFAULT_TRAIN_RATIO,
@@ -13,6 +18,7 @@ from experiments.config import (
     DEFAULT_VAL_RATIO,
     DEFAULT_VAL_SIZE_ROLLING_WINDOW,
     GLOBAL_FEATURES,
+    RANDOM_FOREST_PARAM_GRID,
     TARGET_COLUMN,
 )
 from experiments.metrics import regression_metrics, with_sample_count
@@ -22,31 +28,49 @@ from helpers.data_retrieval import chronological_split, rolling_window, split_fe
 class RandomForestExperiment(BaseExperiment):
     name = "random_forest"
 
+    def _use_grid_search(self) -> bool:
+        return bool(self.options.get("random_forest_grid_search", False))
+
     def run(self, df: pd.DataFrame, mode: RunModes, output_dir: Path) -> ExperimentResult:
+        tune_hyperparameters = self._use_grid_search()
         if mode == RunModes.CHRONOLOGICAL:
-            return self._run_chronological(df, output_dir)
+            return self._run_chronological(
+                df,
+                output_dir,
+                tune_hyperparameters=tune_hyperparameters,
+            )
         if mode == RunModes.SLIDING_WINDOW:
-            return self._run_rolling_window(df, output_dir, mode="sliding_window", tune_hyperparameters=False)
+            return self._run_rolling_window(
+                df,
+                output_dir,
+                mode="sliding_window",
+                tune_hyperparameters=tune_hyperparameters,
+            )
         if mode == RunModes.EXPANDING_WINDOW:
-            return self._run_rolling_window(df, output_dir, mode="expanding_window", tune_hyperparameters=False)
+            return self._run_rolling_window(
+                df,
+                output_dir,
+                mode="expanding_window",
+                tune_hyperparameters=tune_hyperparameters,
+            )
         raise ValueError(
-            f"Unsupported mode '{mode}' for Experiment. Use 'chronological', 'sliding_window', or 'expanding_window'."
+            f"Unsupported mode '{mode}' for Experiment. Use "
+            "'chronological', 'sliding_window', or 'expanding_window'."
         )
 
-    def _get_param_grid(self) -> list[dict]:
-        grid = {
-            "n_estimators": [100, 300],
-            "max_depth": [10, None],
-            "min_samples_split": [2, 10],
-        }
+    def _get_param_grid(self) -> list[dict[str, Any]]:
+        keys = list(RANDOM_FOREST_PARAM_GRID.keys())
+        values = list(RANDOM_FOREST_PARAM_GRID.values())
+        return [dict(zip(keys, combo)) for combo in itertools.product(*values)]
 
-        keys = list(grid.keys())
-        values = list(grid.values())
-
-        return [
-            dict(zip(keys, combo))
-            for combo in itertools.product(*values)
-        ]
+    def _fit_model(self, X_train: pd.DataFrame, y_train: pd.Series, params: dict[str, Any]):
+        model = RandomForestRegressor(
+            **params,
+            random_state=42,
+            n_jobs=-1,
+        )
+        model.fit(X_train, y_train)
+        return model
 
     def _select_best_model(
         self,
@@ -58,21 +82,23 @@ class RandomForestExperiment(BaseExperiment):
         best_model = None
         best_params = None
         best_val_metrics = None
-        best_score = float("inf")  # lavest MAE/RMSE er best
+        best_score = float("inf")
+        search_rows: list[dict[str, Any]] = []
 
-        for params in self._get_param_grid():
-            model = RandomForestRegressor(
-                **params,
-                random_state=42,
-                n_jobs=-1,
-            )
-            model.fit(X_train, y_train)
-
-            val_predictions = model.predict(X_val)
-            val_metrics = regression_metrics(y_val, val_predictions)
-
-            # Velg metrikk du ønsker å tune på
+        for trial_idx, params in enumerate(self._get_param_grid(), start=1):
+            model = self._fit_model(X_train, y_train, params)
+            val_metrics = regression_metrics(y_val, model.predict(X_val))
             score = val_metrics["mae"]
+
+            search_row = {
+                "trial": trial_idx,
+                "val_mae": val_metrics["mae"],
+                "val_rmse": val_metrics["rmse"],
+                "val_r2": val_metrics["r2"],
+                "val_mape": val_metrics["mape"],
+            }
+            search_row.update({f"param_{key}": value for key, value in params.items()})
+            search_rows.append(search_row)
 
             if score < best_score:
                 best_score = score
@@ -80,9 +106,22 @@ class RandomForestExperiment(BaseExperiment):
                 best_params = params
                 best_val_metrics = val_metrics
 
-        return best_model, best_params, best_val_metrics
+        if best_model is None or best_params is None or best_val_metrics is None:
+            raise RuntimeError("Random forest grid search failed to produce a valid model.")
 
-    def _run_chronological(self, df: pd.DataFrame, output_dir: Path) -> ExperimentResult:
+        search_df = (
+            pd.DataFrame(search_rows)
+            .sort_values("val_mae", ascending=True)
+            .reset_index(drop=True)
+        )
+        return best_model, best_params, best_val_metrics, search_df
+
+    def _run_chronological(
+        self,
+        df: pd.DataFrame,
+        output_dir: Path,
+        tune_hyperparameters: bool,
+    ) -> ExperimentResult:
         train_df, val_df, test_df = chronological_split(
             df,
             train_ratio=DEFAULT_TRAIN_RATIO,
@@ -93,7 +132,21 @@ class RandomForestExperiment(BaseExperiment):
         X_val, y_val = split_features_target(val_df, GLOBAL_FEATURES, TARGET_COLUMN)
         X_test, y_test = split_features_target(test_df, GLOBAL_FEATURES, TARGET_COLUMN)
 
-        model, best_params, val_metrics = self._select_best_model(X_train, y_train, X_val, y_val)
+        search_results_path: Path | None = None
+        num_grid_candidates: int | None = None
+
+        if tune_hyperparameters:
+            model, best_params, val_metrics, search_df = self._select_best_model(
+                X_train,
+                y_train,
+                X_val,
+                y_val,
+            )
+        else:
+            best_params = dict(DEFAULT_RANDOM_FOREST_PARAMS)
+            model = self._fit_model(X_train, y_train, best_params)
+            val_metrics = regression_metrics(y_val, model.predict(X_val))
+            search_df = None
 
         train_metrics = regression_metrics(y_train, model.predict(X_train))
         test_metrics = regression_metrics(y_test, model.predict(X_test))
@@ -106,17 +159,28 @@ class RandomForestExperiment(BaseExperiment):
         with open(model_path, "wb") as file_obj:
             pickle.dump(model, file_obj)
 
+        if search_df is not None:
+            search_results_path = experiment_dir / "grid_search_results.csv"
+            search_df.to_csv(search_results_path, index=False)
+            num_grid_candidates = int(len(search_df))
+
+        metadata: dict[str, Any] = {
+            "feature_columns": list(GLOBAL_FEATURES),
+            "model_path": str(model_path),
+            "best_params": best_params,
+            "train_metrics": train_metrics,
+            "val_metrics": val_metrics,
+            "tune_hyperparameters": tune_hyperparameters,
+        }
+        if search_results_path is not None and num_grid_candidates is not None:
+            metadata["grid_search_results_path"] = str(search_results_path)
+            metadata["num_grid_candidates"] = num_grid_candidates
+
         return ExperimentResult(
             experiment_name=self.name,
             overall_test_metrics=test_with_n,
             segment_test_metrics={"all": test_with_n},
-            metadata={
-                "feature_columns": list(GLOBAL_FEATURES),
-                "model_path": str(model_path),
-                "best_params": best_params,
-                "train_metrics": train_metrics,
-                "val_metrics": val_metrics,
-            },
+            metadata=metadata,
         )
 
     def _run_rolling_window(
@@ -146,35 +210,35 @@ class RandomForestExperiment(BaseExperiment):
             X_test, y_test = split_features_target(test_df, GLOBAL_FEATURES, TARGET_COLUMN)
 
             if tune_hyperparameters:
-                model, best_params, val_metrics = self._select_best_model(X_train, y_train, X_val, y_val)
-            else:
-                model = RandomForestRegressor(
-                    n_estimators=300,
-                    random_state=42,
-                    n_jobs=-1,
+                model, best_params, val_metrics, _ = self._select_best_model(
+                    X_train,
+                    y_train,
+                    X_val,
+                    y_val,
                 )
-                model.fit(X_train, y_train)
-                best_params = {
-                    "n_estimators": 300,
-                }
+            else:
+                best_params = dict(DEFAULT_RANDOM_FOREST_PARAMS)
+                model = self._fit_model(X_train, y_train, best_params)
                 val_metrics = regression_metrics(y_val, model.predict(X_val))
 
             test_metrics = regression_metrics(y_test, model.predict(X_test))
 
-            window_results.append({
-                "window": i,
-                "train_start": train_df.index.min(),
-                "train_end": train_df.index.max(),
-                "val_start": val_df.index.min(),
-                "val_end": val_df.index.max(),
-                "test_start": test_df.index.min(),
-                "test_end": test_df.index.max(),
-                "n_samples": len(test_df),
-                "best_params": str(best_params),
-                "val_mae": val_metrics["mae"],
-                "val_rmse": val_metrics["rmse"],
-                **test_metrics,
-            })
+            window_results.append(
+                {
+                    "window": i,
+                    "train_start": train_df.index.min(),
+                    "train_end": train_df.index.max(),
+                    "val_start": val_df.index.min(),
+                    "val_end": val_df.index.max(),
+                    "test_start": test_df.index.min(),
+                    "test_end": test_df.index.max(),
+                    "n_samples": len(test_df),
+                    "best_params": str(best_params),
+                    "val_mae": val_metrics["mae"],
+                    "val_rmse": val_metrics["rmse"],
+                    **test_metrics,
+                }
+            )
 
         if not window_results:
             raise ValueError("No rolling windows were generated.")
@@ -182,8 +246,10 @@ class RandomForestExperiment(BaseExperiment):
         results_df = pd.DataFrame(window_results)
 
         metric_cols = [
-            c for c in results_df.columns
-            if c not in [
+            c
+            for c in results_df.columns
+            if c
+            not in [
                 "window",
                 "train_start",
                 "train_end",

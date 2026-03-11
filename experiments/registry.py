@@ -30,7 +30,10 @@ def available_experiments() -> list[str]:
     return sorted(EXPERIMENT_REGISTRY)
 
 
-def build_experiments(experiment_names: Iterable[str]) -> list[BaseExperiment]:
+def build_experiments(
+    experiment_names: Iterable[str],
+    options: dict[str, object] | None = None,
+) -> list[BaseExperiment]:
     """Instantiate experiment classes from user-selected names."""
     selected = list(dict.fromkeys(experiment_names))
     unknown = [name for name in selected if name not in EXPERIMENT_REGISTRY]
@@ -39,4 +42,4 @@ def build_experiments(experiment_names: Iterable[str]) -> list[BaseExperiment]:
         unknown_names = ", ".join(unknown)
         raise ValueError(f"Unknown experiments: {unknown_names}. Available: {available}")
 
-    return [EXPERIMENT_REGISTRY[name]() for name in selected]
+    return [EXPERIMENT_REGISTRY[name](options=options) for name in selected]
