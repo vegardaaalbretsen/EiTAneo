@@ -11,6 +11,7 @@ from experiments.base import ExperimentResult, RunModes
 from experiments.registry import build_experiments
 from helpers.data_retrieval import load_preprocessed_data
 from helpers.experiment_logger import ExperimentLogger
+from helpers.plotter import Plotter
 
 
 def run_experiments(
@@ -23,6 +24,7 @@ def run_experiments(
     df = load_preprocessed_data(data_path)
 
     logger = ExperimentLogger(Path(output_dir))
+    plotter = Plotter(logger.base_dir)
 
     results: list[ExperimentResult] = []
 
@@ -37,6 +39,12 @@ def run_experiments(
         results.append(result)
 
         logger.save_result(result)
+
+        if mode == RunModes.CHRONOLOGICAL:
+            plotter.plot_chronological(result, actuals_df=result.test_preds["actual"], predictions=result.test_preds["predicted"])
+        else:
+            window_csv_dir = logger.base_dir / result.experiment_name / mode.value
+            plotter.plot_rolling(result, window_csv_dir=window_csv_dir, mode=mode.value)
 
     summary_df = pd.DataFrame(
         ExperimentLogger.summary_row(r) for r in results
