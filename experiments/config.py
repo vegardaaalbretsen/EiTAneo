@@ -36,20 +36,37 @@ DEFAULT_LGB_PARAMS = {
     "objective": "regression",
     "metric": "mae",
     "boosting_type": "gbdt",
-    "num_leaves": 31,
-    "learning_rate": 0.05,
-    "feature_fraction": 0.8,
+    "num_leaves": 40,
+    "learning_rate": 0.03,
+    "feature_fraction": 1.0,
     "bagging_fraction": 0.8,
     "bagging_freq": 5,
-    "min_child_samples": 20,
+    "min_child_samples": 28,
     "reg_alpha": 0.1,
     "reg_lambda": 0.1,
     "verbose": -1,
     "seed": 42,
 }
 
+LIGHTGBM_GLOBAL_PARAM_GRID = {
+    "num_leaves": [40],
+    "learning_rate": [0.03],
+    "min_child_samples": [18],
+    "feature_fraction": [1.0,0.1, 0.5],
+}
+
 DEFAULT_NUM_BOOST_ROUND = 1000
 DEFAULT_EARLY_STOPPING_ROUNDS = 50
+
+DEFAULT_RANDOM_FOREST_PARAMS = {
+    "n_estimators": 300,
+}
+
+RANDOM_FOREST_PARAM_GRID = {
+    "n_estimators": [100, 300],
+    "max_depth": [10, None],
+    "min_samples_split": [2, 10],
+}
 
 
 # best performance will likely be when the step size and test size are 1

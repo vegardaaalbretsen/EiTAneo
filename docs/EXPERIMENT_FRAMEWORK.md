@@ -32,6 +32,13 @@ This project uses a small experiment framework so multiple model strategies can 
 - `xgboost_global`
 - `svr_global`
 
+`lightgbm_global` supports optional grid search via `--lightgbm-grid-search` in
+`chronological`, `sliding_window`, and `expanding_window` modes. Trial metrics
+are stored in `results/experiments/lightgbm_global/<mode>/grid_search_results.csv`.
+
+`random_forest` supports optional grid search via the CLI flag
+`--random-forest-grid-search`, including in `chronological` mode.
+
 List from CLI:
 
 ```bash
@@ -58,6 +65,7 @@ Default output directory: `results/experiments/`
 
 - `results/experiments/comparison.csv`
 - `results/experiments/comparison.json`
+- `results/experiments/grid_search_trials.csv` (present when one or more experiments emit grid-search trial CSVs)
 - `results/experiments/<experiment_name>/result.json`
 - `results/experiments/<experiment_name>/...` model artifacts saved by each experiment
 
