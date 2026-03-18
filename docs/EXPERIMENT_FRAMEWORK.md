@@ -66,6 +66,7 @@ Default output directory: `results/experiments/`
 - `results/experiments/comparison.csv`
 - `results/experiments/comparison.json`
 - `results/experiments/grid_search_trials.csv` (present when one or more experiments emit grid-search trial CSVs)
+- `results/experiments/grid_search_param_summary.csv` (averaged per trial/parameter combination)
 - `results/experiments/<experiment_name>/result.json`
 - `results/experiments/<experiment_name>/...` model artifacts saved by each experiment
 

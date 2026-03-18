@@ -48,13 +48,62 @@ def _grid_search_rows(results: list[ExperimentResult]) -> pd.DataFrame:
     return combined
 
 
+def _grid_search_param_summary(grid_trials_df: pd.DataFrame) -> pd.DataFrame:
+    if grid_trials_df.empty:
+        return pd.DataFrame()
+
+    param_cols = sorted(col for col in grid_trials_df.columns if col.startswith("param_"))
+    if not param_cols:
+        return pd.DataFrame()
+
+    group_cols = ["experiment"]
+    if "trial" in grid_trials_df.columns:
+        group_cols.append("trial")
+    group_cols.extend(param_cols)
+
+    agg_spec: dict[str, tuple[str, str]] = {}
+    if "val_mae" in grid_trials_df.columns:
+        agg_spec["avg_val_mae"] = ("val_mae", "mean")
+    if "val_rmse" in grid_trials_df.columns:
+        agg_spec["avg_val_rmse"] = ("val_rmse", "mean")
+    if "val_r2" in grid_trials_df.columns:
+        agg_spec["avg_val_r2"] = ("val_r2", "mean")
+    if "val_mape" in grid_trials_df.columns:
+        agg_spec["avg_val_mape"] = ("val_mape", "mean")
+    if "best_iteration" in grid_trials_df.columns:
+        agg_spec["avg_best_iteration"] = ("best_iteration", "mean")
+    if "window" in grid_trials_df.columns:
+        agg_spec["num_windows"] = ("window", "nunique")
+    agg_spec["num_rows"] = (group_cols[0], "size")
+
+    summary_df = (
+        grid_trials_df.groupby(group_cols, dropna=False)
+        .agg(**agg_spec)
+        .reset_index()
+    )
+
+    sort_cols = [col for col in ("experiment", "avg_val_mae") if col in summary_df.columns]
+    if sort_cols:
+        summary_df = summary_df.sort_values(sort_cols, ascending=True).reset_index(drop=True)
+    return summary_df
+
+
 def run_experiments(
     experiment_names: Iterable[str],
     data_path: str | Path,
     mode: RunModes,
     output_dir: str | Path,
     experiment_options: dict[str, object] | None = None,
-) -> tuple[list[ExperimentResult], pd.DataFrame, Path, Path, pd.DataFrame, Path | None]:
+) -> tuple[
+    list[ExperimentResult],
+    pd.DataFrame,
+    Path,
+    Path,
+    pd.DataFrame,
+    Path | None,
+    pd.DataFrame,
+    Path | None,
+]:
     """Run selected experiments and persist comparison outputs."""
     df = load_preprocessed_data(data_path)
 
@@ -87,4 +136,19 @@ def run_experiments(
         grid_trials_csv = output_path / "grid_search_trials.csv"
         grid_trials_df.to_csv(grid_trials_csv, index=False)
 
-    return results, summary_df, csv_path, json_path, grid_trials_df, grid_trials_csv
+    grid_param_summary_df = _grid_search_param_summary(grid_trials_df)
+    grid_param_summary_csv: Path | None = None
+    if not grid_param_summary_df.empty:
+        grid_param_summary_csv = output_path / "grid_search_param_summary.csv"
+        grid_param_summary_df.to_csv(grid_param_summary_csv, index=False)
+
+    return (
+        results,
+        summary_df,
+        csv_path,
+        json_path,
+        grid_trials_df,
+        grid_trials_csv,
+        grid_param_summary_df,
+        grid_param_summary_csv,
+    )

@@ -21,7 +21,12 @@ from experiments.config import (
     TARGET_COLUMN,
 )
 from experiments.metrics import with_sample_count
-from experiments.models._lightgbm_utils import evaluate_lightgbm, train_lightgbm_regressor
+from experiments.models._lightgbm_utils import (
+    evaluate_lightgbm,
+    lightgbm_prediction_frame,
+    save_lightgbm_prediction_artifacts,
+    train_lightgbm_regressor,
+)
 from helpers.data_retrieval import chronological_split, rolling_window
 
 
@@ -155,6 +160,18 @@ class LightGBMGlobalExperiment(BaseExperiment):
         search_results_path: Path | None = None
         model.save_model(str(model_path))
 
+        prediction_paths = save_lightgbm_prediction_artifacts(
+            predictions_df=lightgbm_prediction_frame(
+                model,
+                test_df,
+                GLOBAL_FEATURES,
+                TARGET_COLUMN,
+            ),
+            output_dir=experiment_dir,
+            filename_stem="test_predictions",
+            title="LightGBM Global: Actual vs Predicted (Test Set)",
+        )
+
         metadata: dict[str, Any] = {
             "feature_columns": list(GLOBAL_FEATURES),
             "model_path": str(model_path),
@@ -162,6 +179,7 @@ class LightGBMGlobalExperiment(BaseExperiment):
             "train_metrics": train_metrics,
             "val_metrics": val_metrics,
             "tune_hyperparameters": tune_hyperparameters,
+            **prediction_paths,
         }
 
         if search_df is not None:
@@ -187,6 +205,7 @@ class LightGBMGlobalExperiment(BaseExperiment):
     ) -> ExperimentResult:
         window_results = []
         all_grid_trials: list[pd.DataFrame] = []
+        prediction_frames: list[pd.DataFrame] = []
         experiment_dir = output_dir / self.name / mode
         experiment_dir.mkdir(parents=True, exist_ok=True)
 
@@ -223,6 +242,14 @@ class LightGBMGlobalExperiment(BaseExperiment):
                 GLOBAL_FEATURES,
                 TARGET_COLUMN,
             )
+            prediction_df = lightgbm_prediction_frame(
+                model,
+                test_df,
+                GLOBAL_FEATURES,
+                TARGET_COLUMN,
+            )
+            prediction_df.insert(0, "window", i)
+            prediction_frames.append(prediction_df)
 
             window_results.append(
                 {
@@ -269,6 +296,15 @@ class LightGBMGlobalExperiment(BaseExperiment):
             "mode": mode,
             "tune_hyperparameters": tune_hyperparameters,
         }
+        if prediction_frames:
+            all_predictions_df = pd.concat(prediction_frames)
+            prediction_paths = save_lightgbm_prediction_artifacts(
+                predictions_df=all_predictions_df,
+                output_dir=experiment_dir,
+                filename_stem="test_predictions",
+                title=f"LightGBM Global: Actual vs Predicted ({mode.replace('_', ' ').title()})",
+            )
+            metadata.update(prediction_paths)
         if all_grid_trials:
             all_trials_df = pd.concat(all_grid_trials, ignore_index=True)
             all_trials_df = all_trials_df.sort_values(["window", "val_mae"], ascending=True).reset_index(drop=True)

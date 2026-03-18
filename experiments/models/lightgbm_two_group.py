@@ -19,7 +19,12 @@ from experiments.config import (
     DEFAULT_STEP_SIZE_ROLLING_WINDOW,
 )
 from experiments.metrics import weighted_overall, with_sample_count
-from experiments.models._lightgbm_utils import evaluate_lightgbm, train_lightgbm_regressor
+from experiments.models._lightgbm_utils import (
+    evaluate_lightgbm,
+    lightgbm_prediction_frame,
+    save_lightgbm_prediction_artifacts,
+    train_lightgbm_regressor,
+)
 from helpers.data_retrieval import chronological_split, rolling_window
 
 
@@ -97,12 +102,25 @@ class LightGBMTwoGroupExperiment(BaseExperiment):
             model_path = experiment_dir / f"{group_name}.txt"
             model.save_model(str(model_path))
 
+            prediction_paths = save_lightgbm_prediction_artifacts(
+                predictions_df=lightgbm_prediction_frame(
+                    model,
+                    test_df,
+                    group_config["feature_cols"],
+                    TARGET_COLUMN,
+                ),
+                output_dir=experiment_dir,
+                filename_stem=f"{group_name}_test_predictions",
+                title=f"LightGBM Two-Group: {group_name.replace('_', ' ').title()} Test Set",
+            )
+
             segment_metadata[group_name] = {
                 "feature_columns": list(group_config["feature_cols"]),
                 "model_path": str(model_path),
                 "best_iteration": int(model.best_iteration),
                 "train_metrics": train_metrics,
                 "val_metrics": val_metrics,
+                **prediction_paths,
             }
 
         overall_test_metrics = weighted_overall(segment_test_metrics)
@@ -145,6 +163,7 @@ class LightGBMTwoGroupExperiment(BaseExperiment):
                 raise ValueError(f"No rows found for group '{group_name}'.")
 
             window_results = []
+            prediction_frames: list[pd.DataFrame] = []
 
             for i, (train_df, val_df, test_df) in enumerate(
                 rolling_window(
@@ -169,6 +188,14 @@ class LightGBMTwoGroupExperiment(BaseExperiment):
                     group_config["feature_cols"],
                     TARGET_COLUMN,
                 )
+                prediction_df = lightgbm_prediction_frame(
+                    model,
+                    test_df,
+                    group_config["feature_cols"],
+                    TARGET_COLUMN,
+                )
+                prediction_df.insert(0, "window", i)
+                prediction_frames.append(prediction_df)
 
                 window_results.append({
                     "window": i,
@@ -190,8 +217,6 @@ class LightGBMTwoGroupExperiment(BaseExperiment):
                 experiment_dir / f"{group_name}_window_metrics.csv",
                 index=False,
             )
-
-            # TODO: add plots
 
             metric_cols = [
                 c for c in results_df.columns
@@ -218,10 +243,23 @@ class LightGBMTwoGroupExperiment(BaseExperiment):
 
             segment_test_metrics[group_name] = weighted_metrics
 
+            prediction_metadata = {}
+            if prediction_frames:
+                prediction_metadata = save_lightgbm_prediction_artifacts(
+                    predictions_df=pd.concat(prediction_frames),
+                    output_dir=experiment_dir,
+                    filename_stem=f"{group_name}_test_predictions",
+                    title=(
+                        f"LightGBM Two-Group: {group_name.replace('_', ' ').title()} "
+                        f"({mode.replace('_', ' ').title()})"
+                    ),
+                )
+
             segment_metadata[group_name] = {
                 "mode": mode,
                 "num_windows": len(results_df),
                 "feature_columns": list(group_config["feature_cols"]),
+                **prediction_metadata,
             }
 
         overall_test_metrics = weighted_overall(segment_test_metrics)

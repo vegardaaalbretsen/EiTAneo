@@ -36,12 +36,12 @@ DEFAULT_LGB_PARAMS = {
     "objective": "regression",
     "metric": "mae",
     "boosting_type": "gbdt",
-    "num_leaves": 40,
+    "num_leaves": 35,
     "learning_rate": 0.03,
     "feature_fraction": 1.0,
     "bagging_fraction": 0.8,
     "bagging_freq": 5,
-    "min_child_samples": 28,
+    "min_child_samples": 19,
     "reg_alpha": 0.1,
     "reg_lambda": 0.1,
     "verbose": -1,
@@ -49,10 +49,10 @@ DEFAULT_LGB_PARAMS = {
 }
 
 LIGHTGBM_GLOBAL_PARAM_GRID = {
-    "num_leaves": [40],
-    "learning_rate": [0.03],
-    "min_child_samples": [18],
-    "feature_fraction": [1.0,0.1, 0.5],
+    "num_leaves": [35, 40, 45],
+    "learning_rate": [0.03, 0.02],
+    "min_child_samples": [18,19],
+    "feature_fraction": [1.0],
 }
 
 DEFAULT_NUM_BOOST_ROUND = 1000

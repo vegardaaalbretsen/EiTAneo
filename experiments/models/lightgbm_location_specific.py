@@ -20,8 +20,12 @@ from experiments.config import (
     DEFAULT_STEP_SIZE_ROLLING_WINDOW,
 )
 from experiments.metrics import weighted_overall, with_sample_count
-from experiments.models._lightgbm_utils import evaluate_lightgbm, train_lightgbm_regressor
-from helpers.data_retrieval import chronological_split
+from experiments.models._lightgbm_utils import (
+    evaluate_lightgbm,
+    lightgbm_prediction_frame,
+    save_lightgbm_prediction_artifacts,
+    train_lightgbm_regressor,
+)
 
 
 class LightGBMLocationSpecificExperiment(BaseExperiment):
@@ -77,6 +81,18 @@ class LightGBMLocationSpecificExperiment(BaseExperiment):
             model_path = experiment_dir / f"{segment_key}.txt"
             model.save_model(str(model_path))
 
+            prediction_paths = save_lightgbm_prediction_artifacts(
+                predictions_df=lightgbm_prediction_frame(
+                    model,
+                    test_df,
+                    BASE_FEATURES,
+                    TARGET_COLUMN,
+                ),
+                output_dir=experiment_dir,
+                filename_stem=f"{segment_key}_test_predictions",
+                title=f"LightGBM Location-Specific: {location_name} Test Set",
+            )
+
             segment_metadata[segment_key] = {
                 "location_id": int(location_id),
                 "location_name": location_name,
@@ -85,6 +101,7 @@ class LightGBMLocationSpecificExperiment(BaseExperiment):
                 "best_iteration": int(model.best_iteration),
                 "train_metrics": train_metrics,
                 "val_metrics": val_metrics,
+                **prediction_paths,
             }
 
         if not segment_test_metrics:
@@ -118,6 +135,7 @@ class LightGBMLocationSpecificExperiment(BaseExperiment):
                 continue
 
             window_results = []
+            prediction_frames: list[pd.DataFrame] = []
 
             for i, (train_df, val_df, test_df) in enumerate(
                 rolling_window(
@@ -142,6 +160,14 @@ class LightGBMLocationSpecificExperiment(BaseExperiment):
                     BASE_FEATURES,
                     TARGET_COLUMN,
                 )
+                prediction_df = lightgbm_prediction_frame(
+                    model,
+                    test_df,
+                    BASE_FEATURES,
+                    TARGET_COLUMN,
+                )
+                prediction_df.insert(0, "window", i)
+                prediction_frames.append(prediction_df)
 
                 window_results.append({
                     "window": i,
@@ -170,8 +196,6 @@ class LightGBMLocationSpecificExperiment(BaseExperiment):
                 index=False,
             )
 
-            # TODO: add plots
-
             metric_cols = [
                 c for c in results_df.columns
                 if c not in ["window", "train_start", "train_end", "test_start", "test_end", "n_samples"]
@@ -191,11 +215,24 @@ class LightGBMLocationSpecificExperiment(BaseExperiment):
 
             segment_test_metrics[segment_key] = weighted_metrics
 
+            prediction_metadata = {}
+            if prediction_frames:
+                prediction_metadata = save_lightgbm_prediction_artifacts(
+                    predictions_df=pd.concat(prediction_frames),
+                    output_dir=experiment_dir,
+                    filename_stem=f"{segment_key}_test_predictions",
+                    title=(
+                        f"LightGBM Location-Specific: {location_name} "
+                        f"({mode.replace('_', ' ').title()})"
+                    ),
+                )
+
             segment_metadata[segment_key] = {
                 "location_id": int(location_id),
                 "location_name": location_name,
                 "num_windows": len(results_df),
                 "mode": mode,
+                **prediction_metadata,
             }
 
         if not segment_test_metrics:

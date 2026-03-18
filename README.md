@@ -75,6 +75,7 @@ By default, results are written to `results/experiments/`:
 - `comparison.csv`: Comparable test metrics for all runs.
 - `comparison.json`: Same summary in JSON format.
 - `grid_search_trials.csv`: Combined trial-level rows from all experiments that expose `grid_search_results.csv`.
+- `grid_search_param_summary.csv`: Average validation metrics per trial/parameter combination across windows.
 - `results/experiments/<experiment_name>/result.json`: Detailed per-experiment metrics/metadata.
 - Model files for each experiment (for example `model.txt`, `model.pkl`, location/group files).
 

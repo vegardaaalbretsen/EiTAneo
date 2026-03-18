@@ -83,6 +83,8 @@ def main() -> None:
             comparison_json,
             grid_trials_df,
             grid_trials_csv,
+            grid_param_summary_df,
+            grid_param_summary_csv,
         ) = run_experiments(
             experiment_names=selected,
             mode=RunModes(args.mode),
@@ -101,6 +103,8 @@ def main() -> None:
     print(f"Comparison JSON: {comparison_json}")
     if grid_trials_csv is not None:
         print(f"Grid Trials CSV: {grid_trials_csv}")
+    if grid_param_summary_csv is not None:
+        print(f"Grid Param Summary CSV: {grid_param_summary_csv}")
 
     if not summary_df.empty:
         print("\nResults (sorted by MAE):")
@@ -109,6 +113,10 @@ def main() -> None:
     if not grid_trials_df.empty:
         print("\nGrid search trials (sorted by experiment + validation MAE):")
         print(grid_trials_df.to_string(index=False))
+
+    if not grid_param_summary_df.empty:
+        print("\nGrid search parameter summary (averaged across windows):")
+        print(grid_param_summary_df.to_string(index=False))
 
 
 if __name__ == "__main__":
