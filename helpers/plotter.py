@@ -99,7 +99,8 @@ class Plotter:
             ax.set_ylabel("Consumption (MW)")
             ax.set_title(plot_title)
             ax.grid(True, alpha=0.25)
-            ax.legend()
+            ax.legend(loc="center left", bbox_to_anchor=(0.02, 0.5))
+
 
             metric_text = (
                 f"Days: {num_days}\n"
